@@ -2,6 +2,7 @@ import requests,math
 import pandas as pd
 from pymongo import MongoClient
 from datetime import datetime
+from collections import Counter
 from bokeh.layouts import gridplot
 from dateutil.parser import parse
 import json
@@ -12,6 +13,10 @@ import matplotlib.ticker as mticker
 from mpl_finance import candlestick_ohlc
 import random
 from bokeh.plotting import figure, output_file, show
+from bokeh.models import ColumnDataSource
+from bokeh.models.widgets import DataTable, DateFormatter, TableColumn
+from bokeh.layouts import column
+
 
 pd.set_option('display.max_columns', 30)
 pd.set_option('display.line_width', 200)
@@ -96,20 +101,30 @@ def read_snp():
     df = pd.read_csv("$SPX.csv")
     return df
 
-def draw_plot_bokeh(dataframe, windows,fall_indices, rise_indices):
+def make_hist_data(data, x_range=20):
+    start_value = int(math.floor(min(data)/x_range)*x_range)
+    end_value = int(math.ceil(max(data)/x_range)*x_range)
+    x_values = [i for i in range(start_value,end_value+x_range,x_range)]
+    out_dict = dict.fromkeys(x_values,0)
+    for i in data:
+        out_dict[int(math.ceil(i/x_range))*x_range]+=1
+    return out_dict
+
+
+def draw_plot_bokeh(ticker, dataframe, windows, fall_indices, rise_indices, matrices):
     TOOLS = "pan,wheel_zoom,box_zoom,reset,save"
-    # Plotting Close Price, Short Avg, Long Avg
-    p1 = figure(x_axis_type="datetime",tools=TOOLS, title="{} Closing Prices".format(ticker), plot_width=1200, plot_height=400)
-    p1.grid.grid_line_alpha = 0.3
-    p1.xaxis.axis_label = 'Date'
-    p1.yaxis.axis_label = 'Price'
-    p1.line(date_time(dataframe.date), dataframe.close, color='blue', legend="close")
-    p1.line(date_time(dataframe.date), dataframe.short_avg, color='green', legend="short_avg")
-    p1.line(date_time(dataframe.date), dataframe.long_avg, color='red', legend="long_avg")
-    p1.legend.location = "top_left"
+    # # Plotting Close Price, Short Avg, Long Avg
+    # p1 = figure(x_axis_type="datetime",tools=TOOLS, title="{} Closing Prices".format(ticker), plot_width=1200, plot_height=400)
+    # p1.grid.grid_line_alpha = 0.3
+    # p1.xaxis.axis_label = 'Date'
+    # p1.yaxis.axis_label = 'Price'
+    # p1.line(date_time(dataframe.date), dataframe.close, color='blue', legend="close")
+    # p1.line(date_time(dataframe.date), dataframe.short_avg, color='green', legend="short_avg")
+    # p1.line(date_time(dataframe.date), dataframe.long_avg, color='red', legend="long_avg")
+    # p1.legend.location = "top_left"
 
     # Plotting
-    p2 = figure(x_axis_type="datetime",tools=TOOLS, title="Short Average V/S Long Average", plot_width=1200, plot_height=400)
+    p2 = figure(x_axis_type="datetime",tools=TOOLS, title=ticker+" Short Average V/S Long Average", plot_width=1200, plot_height=400)
     p2.grid.grid_line_alpha = 0.3
     p2.xaxis.axis_label = 'Date'
     p2.yaxis.axis_label = 'Price'
@@ -124,42 +139,51 @@ def draw_plot_bokeh(dataframe, windows,fall_indices, rise_indices):
     for i in range(len(windows)):
         p2.line(date_time(dataframe.date[windows[i]]), dataframe.close[windows[i]], color=random.choice(colors), legend="close")
 
-    # Plotting GOLD Data
-    gold_df = read_gold()
-    gold_df.date = gold_df.date.apply(lambda x: parse(x).strftime('%Y-%m-%d'))
-    short_rolling_avg_gold = gold_df.close.rolling(50).mean()
-    long_rolling_avg_gold = gold_df.close.rolling(200).mean()
-    gold_df['short_avg'] = short_rolling_avg_gold
-    gold_df['long_avg'] = long_rolling_avg_gold
-    p3 = figure(x_axis_type="datetime", title="GOLD Prices", plot_width=600, plot_height=500,tools=TOOLS)
-    p3.grid.grid_line_alpha = 0.3
-    p3.xaxis.axis_label = 'Date'
-    p3.yaxis.axis_label = 'Price'
-    p3.line(date_time(gold_df.date), gold_df.close, color='blue', legend="close")
-    p3.line(date_time(gold_df.date), gold_df.short_avg, color='green', legend="short_avg")
-    p3.line(date_time(gold_df.date), gold_df.long_avg, color='red', legend="long_avg")
-    p3.legend.location = "top_left"
+    data = dict(
+        entry_50=matrices.entry_50.values,
+        peak_price=matrices.peak_price.values,
+        exit_50=matrices.exit_50.values,
+        mean_price=matrices.mean_price.values,
+        days_to_peak=matrices.days_to_peak.values,
+        days_peak_to_exit=matrices.days_peak_to_exit.values,
+        entry_to_peak=matrices.entry_to_peak.values,
+        peak_to_exit=matrices.peak_to_exit.values,
+        std_dev=matrices.std_dev.values,
+        total_days=matrices.total_days.values,
+    )
+    # Plotting Table for Ticker Name
+    print("data : ", data)
+    source = ColumnDataSource(data)
+    columns = [
+        TableColumn(field="entry_50", title="entry_50"),
+        TableColumn(field="exit_50", title="exit_50"),
+        TableColumn(field="mean_price", title="mean_price"),
+        TableColumn(field="peak_price", title="peak_price"),
+        TableColumn(field="peak_to_exit", title="peak_to_exit"),
+        TableColumn(field="entry_to_peak", title="entry_to_peak"),
+        TableColumn(field="days_to_peak", title="days_to_peak"),
+        TableColumn(field="days_peak_to_exit", title="days_peak_to_exit"),
+        TableColumn(field="std_dev", title="std_dev"),
+        TableColumn(field="total_days", title="total_days")
+    ]
+    data_table = column(DataTable(source=source, columns=columns, width=600, height=400))
+    xp1 = [str(i) for i in list(make_hist_data(list(matrices.days_peak_to_exit.values), x_range=10).keys())]
+    yp1 = list(make_hist_data(list(matrices.days_peak_to_exit.values), x_range=10).values())
+    fp1 = figure(x_range=xp1, plot_height=200, title=ticker + " Days to Peak Frequency",tools=TOOLS)
+    fp1.vbar(x=xp1, top=yp1, width=0.9)
+    fp1.xgrid.grid_line_color = None
+    # fp1.y_range.start = 0
+    fp1.legend.location = "top_centre"
 
-    # Plotting SPX Data
-    spx_df = read_snp()
-    spx_df.date = spx_df.date.apply(lambda x: parse(x).strftime('%Y-%m-%d'))
-    short_rolling_avg_spx_df = spx_df.close.rolling(50).mean()
-    long_rolling_avg_spx_df = spx_df.close.rolling(200).mean()
-    spx_df['short_avg'] = short_rolling_avg_spx_df
-    spx_df['long_avg'] = long_rolling_avg_spx_df
-    p4 = figure(x_axis_type="datetime",tools=TOOLS, title="SPX Prices", plot_width=600, plot_height=500)
-    p4.grid.grid_line_alpha = 0.3
-    p4.xaxis.axis_label = 'Date'
-    p4.yaxis.axis_label = 'Price'
-    p4.line(date_time(spx_df.date), spx_df.close, color='blue', legend="close")
-    p4.line(date_time(spx_df.date), spx_df.short_avg, color='green', legend="short_avg")
-    p4.line(date_time(spx_df.date), spx_df.long_avg, color='red', legend="long_avg")
-    p4.legend.location = "top_left"
+    xp2 = [str(i) for i in list(make_hist_data(list(matrices.entry_to_peak.values), x_range=10).keys())]
+    yp2 = list(make_hist_data(list(matrices.entry_to_peak.values), x_range=10).values())
+    fp2 = figure(x_range= xp2, plot_height=200, title=ticker+" Price to Peak Frequency",tools=TOOLS)
+    fp2.vbar(x=xp2, top=yp2, width=0.9)
+    fp2.xgrid.grid_line_color = None
+    # fp2.y_range.start = 0
+    fp2.legend.location = "top_centre"
 
-    # output to static HTML file
-    output_file("stock_behavior_analytics.html")
-    show(gridplot([[p1], [p2], [p3, p4]]))
-    # return
+    return p2,data_table, fp1, fp2
 
 
 # Function to draw plot using matplotlib
@@ -236,11 +260,11 @@ def calculate_rolling_avgs(dataframe):
     windows = get_windows(dataframe.date.values, dataframe.short_avg.values, rise_indices, fall_indices)
 
     # Function to find matrices from short windows
-    get_matrices(dataframe, windows)
+    matrices = get_matrices(dataframe, windows)
 
-    # Function to plot in dashboard
-    draw_plot_bokeh(dataframe,windows,fall_indices,rise_indices)
-    return dataframe
+    # # Function to plot in dashboard
+    # draw_plot_bokeh(dataframe, windows, fall_indices, rise_indices, matrices)
+    return dataframe, windows, fall_indices, rise_indices, matrices
 
 # Function to check first index
 def check_first_index(plot_list, indices):
@@ -269,6 +293,7 @@ def plot_rise_and_fall(date_list, plot_list, rise_indx, fall_indx, fig):
     plt.plot(date_list[rise_indx], plot_list[rise_indx], 'ro', color='green')
     plt.plot(date_list[fall_indx], plot_list[fall_indx], 'ro', color='red')
     # plt.show()
+
 
 # Plotting Rising and Falling Indices
 # def plot_rise_and_fall_bokeh(date_list, plot_list, rise_indx, fall_indx):
@@ -397,6 +422,7 @@ def get_matrices(dataframe, windows):
     # fig, ax = plt.subplots(figsize=(14, 5))
     # make_hist(ax, x, bins=list(range(10)) + list(range(10, 41, 5)) + [np.inf], extra_y=6,title='Rise Percentages Frequency Distribution',xlabel='Percentages',ylabel='Frequency')
     # plt.show()
+    return out
 
 # Draw CandleSticks
 def draw_candlesticks(dataframe):
@@ -511,8 +537,9 @@ if __name__ == '__main__':
     # Function to read data from a csv or excel file
     # data_df = read_data_csv('TSLA.csv')
     # data_df = read_data_csv('ADSK.csv')
-    data_df = read_data_csv(filename)
-
+    data_df_ticker = read_data_csv(filename)
+    data_df_gold = read_data_csv("$GOLD-2.csv")
+    data_df_spx = read_data_csv("$SPX.csv")
     # Function to read data from mongodb
     # data_df = read_data_db(database=db, ticker_name=ticker, start_date=st_date, end_date=ed_date, frequency=frequency)
 
@@ -520,4 +547,20 @@ if __name__ == '__main__':
     # draw_graph(data_df=data_df)
 
     # Function to calculate 50days rolling average
-    data_df_with_avgs = calculate_rolling_avgs(data_df)
+    tkr_dataframe, tkr_windows, tkr_fall_indices, tkr_rise_indices, tkr_matrices = calculate_rolling_avgs(data_df_ticker)
+    gold_dataframe, gold_windows, gold_fall_indices, gold_rise_indices, gold_matrices = calculate_rolling_avgs(data_df_gold)
+    spx_dataframe, spx_windows, spx_fall_indices, spx_rise_indices, spx_matrices = calculate_rolling_avgs(data_df_spx)
+    # Function to plot in dashboard
+
+    tkr_p1, tkr_table, tkr_f1, tkr_f2 = draw_plot_bokeh(ticker,tkr_dataframe, tkr_windows, tkr_fall_indices, tkr_rise_indices, tkr_matrices)
+    gold_p1, gold_table, gold_f1, gold_f2 = draw_plot_bokeh("GOLD",gold_dataframe, gold_windows, gold_fall_indices, gold_rise_indices, gold_matrices)
+    spx_p1, spx_table, spx_f1, spx_f2 = draw_plot_bokeh("SPX",spx_dataframe, spx_windows, spx_fall_indices, spx_rise_indices, spx_matrices)
+
+    # output to static HTML file
+    grid_plot_tkr = gridplot([[tkr_p1],[tkr_table, column(tkr_f1, tkr_f2)]])
+    grid_plot_gold = gridplot([[gold_table, column(gold_f1, gold_f2)]])
+    grid_plot_spx = gridplot([[spx_table, column(spx_f1, spx_f2)]])
+
+    output_file("stock_behavior_analytics.html")
+    show(column(grid_plot_tkr, grid_plot_gold,grid_plot_spx))
+    # show(gridplot([[grid_plot_tkr], [grid_plot_gold],[grid_plot_spx]]))

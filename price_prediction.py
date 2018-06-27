@@ -10,6 +10,7 @@ import matplotlib.dates as mdates
 import matplotlib.ticker as mticker
 from mpl_finance import candlestick_ohlc
 import random
+from bokeh.plotting import figure, output_file, show
 
 pd.set_option('display.max_columns', 30)
 pd.set_option('display.line_width', 200)
@@ -84,6 +85,24 @@ def draw_plot(dataframe):
     plt.show()
     return fig
 
+def date_time(x):
+    return np.array(x, dtype=np.datetime64)
+
+def draw_plot_bokeh(dataframe):
+    p1 = figure(x_axis_type="datetime", title="{} Closing Prices".format(ticker), plot_width=1000, plot_height=500)
+    p1.grid.grid_line_alpha = 0.3
+    p1.xaxis.axis_label = 'Date'
+    p1.yaxis.axis_label = 'Price'
+    p1.line(date_time(dataframe.date), dataframe.close, color='blue', legend="close")
+    p1.line(date_time(dataframe.date), dataframe.short_avg, color='green', legend="short_avg")
+    p1.line(date_time(dataframe.date), dataframe.long_avg, color='red', legend="long_avg")
+    p1.legend.location = "top_left"
+    # output to static HTML file
+    output_file("lines.html")
+    show(p1)
+    return p1
+
+
 def draw_gold(fig):
     dataframe = pd.read_csv('GOLD_small.csv')
     ax1 = fig.add_subplot(1, 2, 1)
@@ -108,7 +127,7 @@ def find_intersection_points(first_list, second_list, date_list, fig):
     print("************** g **************",g)
     idx = np.argwhere(np.diff(np.sign(f - g)) != 0).reshape(-1) + 0
     plt.plot(date_list[idx], g[idx], 'ro', color='blue')
-    plt.xticks(rotation=90)
+    # plt.xticks(rotation=90)
     # plt.show()
     return idx, fig
 
@@ -158,6 +177,7 @@ def calculate_rolling_avgs(dataframe):
     long_rolling_avg = dataframe.close.rolling(200).mean()
     dataframe['short_avg'] = short_rolling_avg
     dataframe['long_avg'] = long_rolling_avg
+
     # dataframe.short_avg = dataframe.short_avg.apply(lambda x: float(x) if x!='null' else 0)
     print("************************ dataframe ********************")
     dataframe.short_avg = dataframe.short_avg.fillna(0)
@@ -165,22 +185,24 @@ def calculate_rolling_avgs(dataframe):
     print(dataframe.tail())
 
     # print("********************** Calling Demo Plot ******************")
-    fig = draw_plot(dataframe)
-    # indices, fig = find_intersection_points(first_list=dataframe.short_avg.values, second_list=dataframe.long_avg.values, date_list=dataframe.date, fig=fig)
-    # print("***************** Intersection Point *******************")
-    # print(indices)
-    #
-    # #find first index
-    # first_index = check_first_index(dataframe.short_avg.values,indices)
-    # # Function to find fall and rise indices
-    # fall_indices, rise_indices = generate_rise_and_fall(indices,first_index)
-    #
-    # # Finding Rising and Falling Indices
-    # fall_indices, rise_indices = find_adjacent_close_prices(dataframe.short_avg.values, dataframe.long_avg.values, indices)
-    #
-    # # Ploting Rising and Falling Indices
-    # plot_rise_and_fall(dataframe.date.values, dataframe.short_avg.values, rise_indices, fall_indices, fig)
-    #
+    # fig = draw_plot(dataframe)
+    fig = draw_plot_bokeh(dataframe)
+
+    indices, fig = find_intersection_points(first_list=dataframe.short_avg.values, second_list=dataframe.long_avg.values, date_list=dataframe.date, fig=fig)
+    print("***************** Intersection Point *******************")
+    print(indices)
+
+    #find first index
+    first_index = check_first_index(dataframe.short_avg.values,indices)
+    # Function to find fall and rise indices
+    fall_indices, rise_indices = generate_rise_and_fall(indices,first_index)
+
+    # Finding Rising and Falling Indices
+    fall_indices, rise_indices = find_adjacent_close_prices(dataframe.short_avg.values, dataframe.long_avg.values, indices)
+
+    # Ploting Rising and Falling Indices
+    plot_rise_and_fall_bokeh(dataframe.date.values, dataframe.short_avg.values, rise_indices, fall_indices, fig)
+
     # # Finding Short Windows using rising indices and falling indices
     # windows = get_windows(dataframe.date.values, dataframe.short_avg.values, rise_indices, fall_indices)
     #
@@ -216,6 +238,12 @@ def plot_rise_and_fall(date_list, plot_list, rise_indx, fall_indx, fig):
     plt.plot(date_list[rise_indx], plot_list[rise_indx], 'ro', color='green')
     plt.plot(date_list[fall_indx], plot_list[fall_indx], 'ro', color='red')
     # plt.show()
+
+# Plotting Rising and Falling Indices
+def plot_rise_and_fall_bokeh(date_list, plot_list, rise_indx, fall_indx, fig):
+    fig.circle(date_list[rise_indx], plot_list[rise_indx],color='green')
+    fig.circle(date_list[fall_indx], plot_list[fall_indx],color='red')
+    show(fig)
 
 # Function to find the windows using rising points
 def get_windows(date_list, plot_list, rising_indices, falling_indices):
@@ -436,7 +464,7 @@ if __name__ == '__main__':
     # ed_date = input("please enter end date (ex. 2017-05-01): ")
     # frequency = input("please enter granular frequency (ex. 1min): ")
 
-    ticker = 'GOLD_small.csv'
+    ticker = 'AAPL.csv'
     st_date = "2013-04-01"
     ed_date = '2014-04-01'
 
